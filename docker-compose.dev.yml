@@ -1,0 +1,28 @@
+version: '3.4'
+
+# Define services extending docker-compose.yml
+# Not working as "services with 'depends_on' cannot be extended"
+# See https://github.com/docker/compose/issues/7916
+services:
+  ipfs:
+    extends:
+      file: docker-compose.yml
+      service: ipfs
+    build:
+      context: components/ipfs
+      dockerfile: Dockerfile
+  ganache:
+    extends:
+      file: docker-compose.yml
+      service: ganache
+  cas:
+    extends:
+      file: docker-compose.yml
+      service: cas
+  ceramic:
+    extends:
+      file: docker-compose.yml
+      service: ceramic
+    build:
+      context: components/ceramic
+      dockerfile: Dockerfile.daemon

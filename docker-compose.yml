@@ -6,9 +6,7 @@ version: '3.4'
 services:
   # IPFS daemon wraps js-ipfs instance with dag-jose codec enabled
   ipfs:
-    build:
-      context: components/ipfs
-      dockerfile: Dockerfile
+    image: ceramicnetwork/js-ipfs-ceramic:latest
     command: /bin/bash -c "[[ -d /root/.jsipfs/repo.lock ]] && rm -rf /root/.jsipfs/repo.lock; npm start"
     volumes:
       - ${PWD}/data/ipfs:/root/.jsipfs
@@ -39,11 +37,17 @@ services:
       - -l
       - '80000000'
       - --quiet
+    healthcheck:
+      test: nc -z ganache ${GANACHE_PORT}
+      interval: 3s
+      timeout: 5s
+      retries: 10
     depends_on:
       - ipfs
 
   # Ceramic anchor service is a PoC of anchor service according to the Ceramic specification.
   cas:
+    # image is not yet available on DockerHub
     build:
       context: components/cas
       dockerfile: Dockerfile
@@ -78,34 +82,25 @@ services:
       - TYPEORM_LOGGING=${TYPEORM_LOGGING}
       - TYPEORM_ENTITIES=${TYPEORM_ENTITIES}
     depends_on:
-      - ganache
-      - ipfs
-    command: >
-      /bin/bash -c "
-        while ! nc -z ganache 8545;
-        do
-          sleep 1;
-        done;
-        npm start
-      "
+      ipfs:
+        condition: service_started
+      ganache:
+        condition: service_healthy
+    healthcheck:
+      # test: nc -z cas ${APP_PORT} /api/v0/healthcheck
+      test: curl --fail -s http://localhost:${APP_PORT}/api/v0/healthcheck || exit 1
+      interval: 3s
+      timeout: 5s
+      retries: 10
 
   # Typescript implementation of the Ceramic protocol.
   ceramic:
-    build:
-      context: components/ceramic
-      dockerfile: Dockerfile.daemon
+    image: ceramicnetwork/js-ceramic:latest
     ports:
       - ${CERAMIC_DAEMON_PORT}:${CERAMIC_DAEMON_PORT}
     volumes:
       - ./data/ceramic:/root/.ceramic
     depends_on:
-      - cas
-    command: >
-      /bin/bash -c "
-        while ! nc -z cas 8081;
-        do
-          sleep 1;
-        done;
-        cd packages/ceramic-cli
-        ./bin/ceramic.js daemon --debug --ipfs-api http://ipfs:5011 --anchor-service-api=http://cas:8081/api/v0/requests --port ${CERAMIC_DAEMON_PORT}
-      "
+      cas:
+        condition: service_healthy
+    command: --debug --ipfs-api http://ipfs:${IPFS_API_PORT} --port ${CERAMIC_DAEMON_PORT} --anchor-service-api=http://cas:${APP_PORT}
